@@ -1,0 +1,261 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Pharmacy {
+  id          String        @id @default(cuid())
+  name        String
+  address     String?
+  phone       String?
+  brandColor  String        @default("#0f766e")
+  brandLogoUrl String?
+  brandTagline String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  pharmacists Pharmacist[]
+  patients    Patient[]
+}
+
+model Pharmacist {
+  id           String     @id @default(cuid())
+  email        String     @unique
+  passwordHash String
+  name         String
+  role         Role       @default(PHARMACIST)
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+  updatedAt    DateTime   @updatedAt
+  pharmacyId   String
+  pharmacy     Pharmacy   @relation(fields: [pharmacyId], references: [id])
+
+  assessments  Assessment[]
+}
+
+model Admin {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  passwordHash String
+  name         String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Patient {
+  id                 String          @id @default(cuid())
+  // 민감 정보는 애플리케이션 레벨에서 AES-256으로 암호화하여 저장
+  encryptedName      String
+  encryptedPhone     String
+  displayName        String?
+  phoneLast4         String?
+  gender             String?
+  birthYear          Int?
+  tags               Json?
+  note               String?
+  createdAt          DateTime        @default(now())
+  updatedAt          DateTime        @updatedAt
+
+  pharmacyId         String
+  pharmacy           Pharmacy        @relation(fields: [pharmacyId], references: [id])
+
+  surveySessions     SurveySession[]
+  assessments        Assessment[]
+}
+
+model SurveyTemplate {
+  id          String           @id @default(cuid())
+  name        String
+  description String?
+  type        SurveyType       @default(INITIAL) // 초진/재진 등
+  isActive    Boolean          @default(true)
+  version     Int              @default(1)
+  baseTemplateId String?
+  baseTemplate   SurveyTemplate? @relation("TemplateVersion", fields: [baseTemplateId], references: [id])
+  versions       SurveyTemplate[] @relation("TemplateVersion")
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  questions   SurveyQuestion[]
+}
+
+model SurveyQuestion {
+  id             String           @id @default(cuid())
+  templateId     String
+  template       SurveyTemplate   @relation(fields: [templateId], references: [id])
+
+  order          Int
+  category       String           // NRFT 영역 / Lifestyle / History 등
+  text           String
+  type           QuestionType
+  logicJson      Json?
+
+  options        SurveyOption[]
+}
+
+model SurveyOption {
+  id           String          @id @default(cuid())
+  questionId   String
+  question     SurveyQuestion  @relation(fields: [questionId], references: [id])
+
+  order        Int
+  text         String
+  // NRFT 점수에 대한 영향을 JSON으로 저장 (예: {"Sleep": -10, "Energy": -5})
+  impactJson   Json
+  matrixImpactJson Json?
+}
+
+model SurveySession {
+  id             String        @id @default(cuid())
+  token          String        @unique
+  status         SessionStatus @default(PENDING)
+  channel        SurveyChannel @default(WEB)
+  deliveryAddress String?
+  expiresAt      DateTime
+  createdAt      DateTime      @default(now())
+  completedAt    DateTime?
+
+  templateId     String
+  template       SurveyTemplate @relation(fields: [templateId], references: [id])
+
+  patientId      String
+  patient        Patient       @relation(fields: [patientId], references: [id])
+
+  pharmacyId     String
+  pharmacy       Pharmacy      @relation(fields: [pharmacyId], references: [id])
+
+  assessment     Assessment?
+  answers        Answer[]
+}
+
+model Answer {
+  id             String         @id @default(cuid())
+  sessionId      String
+  session        SurveySession  @relation(fields: [sessionId], references: [id])
+
+  questionId     String
+  question       SurveyQuestion @relation(fields: [questionId], references: [id])
+
+  // 단일/복수 선택 모두 대응하기 위해 optionIds 배열 사용
+  optionIds      String[]
+  createdAt      DateTime       @default(now())
+}
+
+model Assessment {
+  id              String         @id @default(cuid())
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  pharmacyId      String
+  pharmacy        Pharmacy       @relation(fields: [pharmacyId], references: [id])
+
+  patientId       String
+  patient         Patient        @relation(fields: [patientId], references: [id])
+
+  pharmacistId    String?
+  pharmacist      Pharmacist?    @relation(fields: [pharmacistId], references: [id])
+
+  sessionId       String         @unique
+  session         SurveySession  @relation(fields: [sessionId], references: [id])
+
+  selectedOptionIds String[]
+
+  status          AssessmentStatus @default(PENDING)
+  healthType      String
+  scoresJson      Json            // { Sleep: 80, Digestion: 70, ... }
+  clustersJson    Json?           // 8대 증상 클러스터 등
+  recommendations Json?           // 생활요법/제품 추천 등
+  aiScript        String?         // 생성된 AI 상담 스크립트
+
+  followUps       FollowUp[]
+}
+
+model FollowUp {
+  id             String       @id @default(cuid())
+  assessmentId   String
+  assessment     Assessment   @relation(fields: [assessmentId], references: [id])
+
+  nextVisitDate  DateTime
+  checklistJson  Json?        // 체크리스트 항목들
+  status         FollowUpStatus @default(SCHEDULED)
+  assignee       String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+}
+
+model Notification {
+  id             String       @id @default(cuid())
+  pharmacistId   String
+  pharmacist     Pharmacist   @relation(fields: [pharmacistId], references: [id])
+
+  type           String
+  message        String
+  isRead         Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  createdAt   DateTime @default(now())
+  userId      String?
+  pharmacyId  String?
+  role        Role?
+  method      String
+  path        String
+  status      Int
+  duration    Int
+  metadata    Json?
+}
+
+model FollowUpTemplate {
+  id            String   @id @default(cuid())
+  healthType    String
+  checklistJson Json?
+  offsetDays    Int      @default(7)
+  status        FollowUpStatus @default(SCHEDULED)
+  createdAt     DateTime @default(now())
+}
+
+enum Role {
+  PHARMACIST
+  ADMIN           // 유지: 기존 관리자
+  PHARMACY_ADMIN  // 약국 관리자(지점 단위 관리)
+  SYSTEM_ADMIN    // 플랫폼 시스템 관리자
+}
+
+enum SurveyType {
+  INITIAL
+  FOLLOW_UP
+}
+
+enum QuestionType {
+  SINGLE
+  MULTIPLE
+}
+
+enum SessionStatus {
+  PENDING
+  COMPLETED
+  EXPIRED
+}
+
+enum AssessmentStatus {
+  PENDING
+  COMPLETED
+}
+
+enum FollowUpStatus {
+  SCHEDULED
+  DONE
+  CANCELLED
+}
+
+enum SurveyChannel {
+  WEB
+  EMAIL
+  SMS
+}

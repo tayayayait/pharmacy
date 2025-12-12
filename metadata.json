@@ -1,0 +1,5 @@
+{
+  "name": "Pharmacy NRFT Digital Consultation",
+  "description": "A digital intake and analysis tool for pharmacists to convert patient symptom data into visual health reports (NRFT).",
+  "requestFramePermissions": []
+}
